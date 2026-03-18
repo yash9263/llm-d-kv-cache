@@ -90,9 +90,8 @@ func (e *BlockRemovedEvent) Type() EventType {
 	return EventTypeBlockRemoved
 }
 
-// AllBlocksClearedEvent represents all blocks being cleared from a pod's cache.
+// AllBlocksClearedEvent represents all blocks being cleared.
 type AllBlocksClearedEvent struct {
-	DeviceTier string
 }
 
 // Type returns the event type.

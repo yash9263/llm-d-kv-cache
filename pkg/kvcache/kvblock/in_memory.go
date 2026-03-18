@@ -277,3 +277,12 @@ func podsPerKeyPrintHelper(ks map[BlockHash][]PodEntry) string {
 	}
 	return b.String()
 }
+
+// Clear removes all entries from the index backend.
+func (m *InMemoryIndex) Clear(ctx context.Context) error {
+	traceLogger := log.FromContext(ctx).V(logging.TRACE).WithName("kvblock.InMemoryIndex.Clear")
+	m.engineToRequestKeys.Purge()
+	m.data.Purge()
+	traceLogger.Info("Cleared InMemoryIndex")
+	return nil
+}

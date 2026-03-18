@@ -63,6 +63,11 @@ func testCommonIndexBehavior(t *testing.T, indexFactory func(t *testing.T) Index
 		index := indexFactory(t)
 		testConcurrentOperations(t, ctx, index)
 	})
+
+	t.Run("Clear", func(t *testing.T) {
+		index := indexFactory(t)
+		testClear(t, ctx, index)
+	})
 }
 
 // testBasicAddAndLookup tests basic Add and Lookup functionality.
@@ -213,6 +218,30 @@ func testEvictBasic(t *testing.T, ctx context.Context, index Index) {
 	assert.ElementsMatch(t, expected, podsPerKey[requestKey])
 }
 
+func testClear(t *testing.T, ctx context.Context, index Index) {
+	t.Helper()
+	engineKey := BlockHash(17434655)
+	requestKey := BlockHash(59244875)
+	entries := []PodEntry{
+		{PodIdentifier: "pod1", DeviceTier: "gpu"},
+		{PodIdentifier: "pod2", DeviceTier: "gpu"},
+		{PodIdentifier: "pod3", DeviceTier: "cpu"},
+	}
+
+	// Add entries
+	err := index.Add(ctx, []BlockHash{engineKey}, []BlockHash{requestKey}, entries)
+	require.NoError(t, err)
+
+	// Clear the index
+	err = index.Clear(ctx)
+	require.NoError(t, err)
+
+	// Verify that the index is empty
+	podsPerKey, err := index.Lookup(ctx, []BlockHash{requestKey}, sets.Set[string]{})
+	require.NoError(t, err)
+	assert.Len(t, podsPerKey, 0)
+}
+
 // testConcurrentOperations tests thread safety with concurrent operations.
 func testConcurrentOperations(t *testing.T, ctx context.Context, index Index) {
 	t.Helper()
@@ -243,6 +272,10 @@ func testConcurrentOperations(t *testing.T, ctx context.Context, index Index) {
 				case 2: // Evict
 					entries := []PodEntry{{PodIdentifier: fmt.Sprintf("pod-%d-%d", id, operationIndex-2), DeviceTier: "gpu"}}
 					if err := index.Evict(ctx, engineKey, entries); err != nil {
+						errChan <- err
+					}
+				case 3: // Clear
+					if err := index.Clear(ctx); err != nil {
 						errChan <- err
 					}
 				}

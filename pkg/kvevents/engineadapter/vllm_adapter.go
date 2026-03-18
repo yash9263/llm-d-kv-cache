@@ -148,7 +148,8 @@ type msgpackVLLMBlockRemovedEvent struct {
 }
 
 type msgpackVLLMAllBlocksClearedEvent struct {
-	_ struct{} `msgpack:",array"`
+	_      struct{} `msgpack:",array"`
+	Tag    string
 }
 
 // parseVLLMTopic extracts pod ID and model name from vLLM topic format.
@@ -272,6 +273,11 @@ func (v *VLLMAdapter) convertBlockRemovedEvent(rawEventBytes []byte) (kvevents.G
 }
 
 // convertAllBlocksClearedEvent converts an AllBlocksCleared event.
-func (v *VLLMAdapter) convertAllBlocksClearedEvent(_ []byte) (kvevents.GenericEvent, error) {
+func (v *VLLMAdapter) convertAllBlocksClearedEvent(rawEventBytes []byte) (kvevents.GenericEvent, error) {
+	var vllmEvent msgpackVLLMAllBlocksClearedEvent
+	if err := msgpack.Unmarshal(rawEventBytes, &vllmEvent); err != nil {
+		return nil, fmt.Errorf("failed to decode AllBlocksClearedEvent: %w", err)
+	}
+
 	return &kvevents.AllBlocksClearedEvent{}, nil
 }

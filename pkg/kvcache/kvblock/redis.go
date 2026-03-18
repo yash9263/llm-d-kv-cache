@@ -292,3 +292,15 @@ func (r *RedisIndex) GetRequestKey(ctx context.Context, engineKey BlockHash) (Bl
 func redisEngineKey(engineKey BlockHash) string {
 	return "engine:" + engineKey.String()
 }
+
+// Clear removes all entries from the index backend.
+func (r *RedisIndex) Clear(ctx context.Context) error {
+	logger := log.FromContext(ctx).WithName("kvblock.RedisIndex.Clear")
+	err := r.RedisClient.FlushDB(ctx).Err()
+	if err != nil {
+		return fmt.Errorf("failed to flush %s db: %w", r.BackendType, err)
+	}
+	logger.Info("Cleared", "index", r.BackendType)
+
+	return nil
+}

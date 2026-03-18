@@ -133,6 +133,8 @@ type Index interface {
 	Evict(ctx context.Context, engineKey BlockHash, entries []PodEntry) error
 	// GetRequestKey returns the requestKey associated with the given engineKey.
 	GetRequestKey(ctx context.Context, engineKey BlockHash) (BlockHash, error)
+	// Clear removes all entries from the index backend.
+	Clear(ctx context.Context) error
 }
 
 // BlockHash struct represents a unique identifier for a KV-cache block.

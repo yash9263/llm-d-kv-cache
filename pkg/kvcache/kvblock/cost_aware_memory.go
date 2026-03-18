@@ -312,3 +312,17 @@ func (m *CostAwareMemoryIndex) GetRequestKey(ctx context.Context, engineKey Bloc
 	}
 	return requestKey, nil
 }
+
+// Clear removes all entries from the index backend.
+func (m *CostAwareMemoryIndex) Clear(ctx context.Context) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	traceLogger := log.FromContext(ctx).V(logging.TRACE).WithName("kvblock.CostAwareMemoryIndex.Clear")
+
+	m.requestKeys.Purge()
+	m.data.Clear()
+
+	m.data.Wait()
+	traceLogger.Info("Cleared CostAwareMemoryIndex")
+	return nil
+}
