@@ -87,6 +87,6 @@ func (t *tracedIndex) GetRequestKey(ctx context.Context, engineKey BlockHash) (B
 	return t.next.GetRequestKey(ctx, engineKey)
 }
 
-func (t *tracedIndex) Clear(ctx context.Context) error {
-	return t.next.Clear(ctx)
+func (t *tracedIndex) Clear(ctx context.Context, podEntry PodEntry) error {
+	return t.next.Clear(ctx, podEntry)
 }

@@ -150,6 +150,7 @@ type msgpackVLLMBlockRemovedEvent struct {
 type msgpackVLLMAllBlocksClearedEvent struct {
 	_      struct{} `msgpack:",array"`
 	Tag    string
+	Medium *string `msgpack:",omitempty"`
 }
 
 // parseVLLMTopic extracts pod ID and model name from vLLM topic format.
@@ -278,6 +279,12 @@ func (v *VLLMAdapter) convertAllBlocksClearedEvent(rawEventBytes []byte) (kveven
 	if err := msgpack.Unmarshal(rawEventBytes, &vllmEvent); err != nil {
 		return nil, fmt.Errorf("failed to decode AllBlocksClearedEvent: %w", err)
 	}
+	deviceTier := ""
+	if vllmEvent.Medium != nil {
+		deviceTier = *vllmEvent.Medium
+	}
 
-	return &kvevents.AllBlocksClearedEvent{}, nil
+	return &kvevents.AllBlocksClearedEvent{
+		DeviceTier: deviceTier,
+	}, nil
 }

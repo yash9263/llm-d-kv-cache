@@ -277,8 +277,9 @@ func (p *Pool) processEventBatch(ctx context.Context, batch *EventBatch, podIden
 			}
 
 		case *AllBlocksClearedEvent:
-			if err := p.index.Clear(ctx); err != nil {
+			if err := p.index.Clear(ctx, kvblock.PodEntry{PodIdentifier: podIdentifier, DeviceTier: ev.DeviceTier}); err != nil {
 				debugLogger.Error(err, "Failed to clear all blocks",
+					"deviceTier", ev.DeviceTier,
 					"podIdentifier", podIdentifier,
 					"modelName", modelName)
 				continue

@@ -91,8 +91,8 @@ func recordHitMetrics(keyToPods map[BlockHash][]PodEntry) {
 	metrics.LookupHits.Add(float64(maxHit))
 }
 
-func (m *instrumentedIndex) Clear(ctx context.Context) error {
-	err := m.next.Clear(ctx)
+func (m *instrumentedIndex) Clear(ctx context.Context, podEntry PodEntry) error {
+	err := m.next.Clear(ctx, podEntry)
 	metrics.Clear.Add(1)
 	return err
 }

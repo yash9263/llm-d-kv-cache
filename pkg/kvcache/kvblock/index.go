@@ -139,7 +139,9 @@ type Index interface {
 	// GetRequestKey returns the requestKey associated with the given engineKey.
 	GetRequestKey(ctx context.Context, engineKey BlockHash) (BlockHash, error)
 	// Clear removes all entries from the index backend.
-	Clear(ctx context.Context) error
+	// If podEntry.DeviceTier is empty, all tiers for that pod identifier are removed.
+	// If podEntry.DeviceTier is set, only entries matching that exact tier are removed.
+	Clear(ctx context.Context, podEntry PodEntry) error
 }
 
 // KeyType indicates whether a key passed to Evict is an engine key or a request key.

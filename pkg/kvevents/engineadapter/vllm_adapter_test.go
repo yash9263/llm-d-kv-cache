@@ -252,7 +252,7 @@ func TestDecodeVLLMEvent_BlockRemoved(t *testing.T) {
 func TestDecodeVLLMEvent_AllBlocksCleared(t *testing.T) {
 	adapter := NewVLLMAdapter()
 
-	vllmEvent := []any{"AllBlocksCleared"}
+	vllmEvent := []any{"AllBlocksCleared", nil}
 
 	rawBytes, err := msgpack.Marshal(vllmEvent)
 	require.NoError(t, err)
