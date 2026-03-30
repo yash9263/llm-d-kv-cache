@@ -14,9 +14,11 @@
 
 """Shared pytest fixtures for UDS tokenizer tests."""
 
+import asyncio
 import os
-from collections.abc import Iterator
 import tempfile
+import threading
+from collections.abc import Iterator
 
 import grpc
 import pytest
@@ -25,7 +27,6 @@ import tokenizerpb.tokenizer_pb2_grpc as tokenizer_pb2_grpc
 from tokenizer_service.tokenizer import TokenizerService
 from tokenizer_service.renderer import RendererService
 from tokenizer_grpc_service import create_grpc_server
-from utils.thread_pool_utils import get_thread_pool
 
 
 DEFAULT_TEST_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
@@ -51,43 +52,48 @@ def uds_socket_path() -> Iterator[str]:
 
 @pytest.fixture(scope="session")
 def grpc_server(uds_socket_path: str) -> Iterator[None]:
-    """Start and stop the gRPC server for the test session."""
+    """Start an async gRPC server in a background event loop for the test session."""
     tokenizer_service = TokenizerService()
     renderer_service = RendererService()
 
-    thread_pool = get_thread_pool()
-    server = create_grpc_server(
-        tokenizer_service,
-        uds_socket_path,
-        thread_pool,
-        renderer_service=renderer_service,
-    )
-    server.start()
+    async def _start():
+        server = create_grpc_server(
+            tokenizer_service,
+            uds_socket_path,
+            renderer_service,
+        )
+        await server.start()
+        return server
+
+    loop = asyncio.new_event_loop()
+    thread = threading.Thread(target=loop.run_forever, daemon=True)
+    thread.start()
+    try:
+        server = asyncio.run_coroutine_threadsafe(_start(), loop).result(timeout=30)
+    except Exception:
+        loop.call_soon_threadsafe(loop.stop)
+        thread.join(timeout=5)
+        loop.close()
+        raise
 
     yield
 
-    # Graceful shutdown with matching timeout
-    stop_future = server.stop(grace=5)
-    stop_future.wait(timeout=5)
+    asyncio.run_coroutine_threadsafe(server.stop(grace=5), loop).result(timeout=10)
+    loop.call_soon_threadsafe(loop.stop)
+    thread.join(timeout=5)
+    loop.close()
 
 
 @pytest.fixture(scope="session")
 def grpc_channel(grpc_server: None, uds_socket_path: str) -> Iterator[grpc.Channel]:
-    """Create a gRPC channel connected to the test server.
-
-    Uses wait_for_ready to automatically retry connection until server is ready.
-    """
+    """Create a gRPC channel connected to the test server."""
     channel = grpc.insecure_channel(f"unix://{uds_socket_path}")
-
-    # Verify channel can connect by waiting for it to be ready
     try:
         grpc.channel_ready_future(channel).result(timeout=10.0)
     except grpc.FutureTimeoutError:
         channel.close()
         raise RuntimeError(f"gRPC channel to {uds_socket_path} not ready within 10s")
-
     yield channel
-
     channel.close()
 
 

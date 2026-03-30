@@ -12,54 +12,48 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Synchronous gRPC service for tokenizer operations optimized for CPU-intensive tasks."""
+"""Async gRPC service for tokenizer operations using grpc.aio."""
 
 import asyncio
+import json
 import grpc
+from typing import Any
 from grpc_reflection.v1alpha import reflection
 import logging
-import threading
-from concurrent.futures import ThreadPoolExecutor
-
 import os
 import sys
 
-# Ensure current directory is on sys.path for protobuf imports
 sys.path.append(os.path.dirname(__file__))
 
-# Import protobuf-generated modules
 import tokenizerpb.tokenizer_pb2 as tokenizer_pb2
 import tokenizerpb.tokenizer_pb2_grpc as tokenizer_pb2_grpc
+from google.protobuf.json_format import MessageToDict
 from tokenizer_service.tokenizer import TokenizerService
 from tokenizer_service.renderer import RendererService
-from utils.thread_pool_utils import get_thread_pool_size
+from vllm.entrypoints.openai.chat_completion.protocol import ChatCompletionRequest
+from vllm.entrypoints.openai.completion.protocol import CompletionRequest
 
 
 class TokenizationServiceServicer(tokenizer_pb2_grpc.TokenizationServiceServicer):
-    """Synchronous gRPC service implementation class, optimized for CPU-intensive operations"""
-
     def __init__(
         self, tokenizer_service: TokenizerService, renderer_service: RendererService
     ):
         self.tokenizer_service = tokenizer_service
         self.renderer_service = renderer_service
-        self._loop = asyncio.new_event_loop()
-        self._loop_thread = threading.Thread(target=self._loop.run_forever, daemon=True)
-        self._loop_thread.start()
         logging.info("TokenizationServiceServicer initialized")
 
-    def Tokenize(
+    async def Tokenize(
         self,
         request: tokenizer_pb2.TokenizeRequest,
-        context: grpc.ServicerContext,
+        context: grpc.aio.ServicerContext,
     ) -> tokenizer_pb2.TokenizeResponse:
-        """Implement the synchronous Tokenize RPC method"""
         try:
-            # logging.info(f"Received tokenize request for model: {request.model_name}")
-
             # Use tokenizer_service for tokenization, with add_special_tokens from request
-            batch_encoding = self.tokenizer_service.tokenize_and_process(
-                request.input, request.add_special_tokens, request.model_name
+            batch_encoding = await asyncio.to_thread(
+                self.tokenizer_service.tokenize_and_process,
+                request.input,
+                request.add_special_tokens,
+                request.model_name,
             )
 
             # Convert result format
@@ -76,52 +70,50 @@ class TokenizationServiceServicer(tokenizer_pb2_grpc.TokenizationServiceServicer
                 offset_pairs=offset_pairs,  # Only use offset_pairs field
                 success=True,
             )
-
-            # logging.info(f"Tokenization completed with {len(input_ids)} tokens")
             return response
 
         except Exception as e:
             logging.error(f"Tokenization failed: {e}", exc_info=True)
-            context.abort(grpc.StatusCode.INTERNAL, str(e))
+            await context.abort(grpc.StatusCode.INTERNAL, str(e))
 
-    def RenderChatTemplate(
+    async def RenderChatTemplate(
         self,
         request: tokenizer_pb2.ChatTemplateRequest,
-        context: grpc.ServicerContext,
+        context: grpc.aio.ServicerContext,
     ) -> tokenizer_pb2.ChatTemplateResponse:
-        """Implement the synchronous RenderChatTemplate RPC method"""
         try:
-            # logging.info(f"Received chat template request")
-
-            # Convert the nested conversation turns to a flat list of messages
-            messages: list[dict[str, str]] = []
+            messages: list[dict[str, Any]] = []
             for turn in request.conversation_turns:
                 for msg in turn.messages:
-                    messages.append({"role": msg.role, "content": msg.content})
+                    if msg.content_parts:
+                        content_value = [
+                            MessageToDict(part, preserving_proto_field_name=True)
+                            for part in msg.content_parts
+                        ]
+                    else:
+                        content_value = msg.content if msg.HasField("content") else None
+                    messages.append({"role": msg.role, "content": content_value})
 
-            # Call tokenizer_service method with model name
-            prompt = self.tokenizer_service.apply_template(messages, request.model_name)
-
-            response = tokenizer_pb2.ChatTemplateResponse(
+            prompt = await asyncio.to_thread(
+                self.tokenizer_service.apply_template, messages, request.model_name
+            )
+            return tokenizer_pb2.ChatTemplateResponse(
                 rendered_prompt=prompt, success=True
             )
-
-            # logging.info(f"Chat template rendered successfully")
-            return response
-
         except Exception as e:
             logging.error(f"Chat template rendering failed: {e}", exc_info=True)
-            context.abort(grpc.StatusCode.INTERNAL, str(e))
+            await context.abort(grpc.StatusCode.INTERNAL, str(e))
 
-    def InitializeTokenizer(
+    async def InitializeTokenizer(
         self,
         request: tokenizer_pb2.InitializeTokenizerRequest,
-        context: grpc.ServicerContext,
+        context: grpc.aio.ServicerContext,
     ) -> tokenizer_pb2.InitializeTokenizerResponse:
-        """Implement the synchronous InitializeTokenizer RPC method"""
         logging.info(f"Initializing tokenizer for model: {request.model_name}")
 
-        renderer_success = self.renderer_service.load_renderer(request.model_name)
+        renderer_success = await asyncio.to_thread(
+            self.renderer_service.load_renderer, request.model_name
+        )
         if not renderer_success:
             return tokenizer_pb2.InitializeTokenizerResponse(
                 success=False,
@@ -129,7 +121,8 @@ class TokenizationServiceServicer(tokenizer_pb2_grpc.TokenizationServiceServicer
             )
 
         try:
-            self.tokenizer_service.load_tokenizer(
+            await asyncio.to_thread(
+                self.tokenizer_service.load_tokenizer,
                 request.model_name,
                 request.enable_thinking,
                 request.add_generation_prompt,
@@ -173,65 +166,94 @@ class TokenizationServiceServicer(tokenizer_pb2_grpc.TokenizationServiceServicer
 
         return response
 
-    def RenderChatCompletion(
+    async def RenderChatCompletion(
         self,
         request: tokenizer_pb2.RenderChatCompletionRequest,
-        context: grpc.ServicerContext,
+        context: grpc.aio.ServicerContext,
     ) -> tokenizer_pb2.RenderChatCompletionResponse:
         """Render an OpenAI chat completion request via OpenAIServingRender."""
         try:
-            result = asyncio.run_coroutine_threadsafe(
-                self.renderer_service.render_chat(
-                    request.request_json, request.model_name
-                ),
-                self._loop,
-            ).result()
+            request_dict = MessageToDict(request, preserving_proto_field_name=True)
+
+            messages = request_dict.get("messages", [])
+            for msg in messages:
+                if "content_parts" in msg:
+                    msg["content"] = msg.pop("content_parts")
+
+            tools = (
+                json.loads(request_dict["tools_json"])
+                if request_dict.get("tools_json")
+                else None
+            )
+            chat_template = request.chat_template or None
+            chat_template_kwargs = (
+                json.loads(request_dict["chat_template_kwargs"])
+                if request_dict.get("chat_template_kwargs")
+                else None
+            )
+            add_generation_prompt = (
+                request.add_generation_prompt
+                if request.HasField("add_generation_prompt")
+                else True
+            )
+
+            chat_request = ChatCompletionRequest(
+                model=request_dict["model_name"],
+                messages=messages,
+                tools=tools,
+                chat_template=chat_template,
+                add_generation_prompt=add_generation_prompt,
+                continue_final_message=request.continue_final_message,
+                chat_template_kwargs=chat_template_kwargs,
+            )
+            result = await self.renderer_service.render_chat(
+                chat_request, request.model_name
+            )
             return self._generate_request_to_proto(result)
         except Exception as e:
             logging.error(f"RenderChatCompletion failed: {e}", exc_info=True)
-            context.abort(grpc.StatusCode.INTERNAL, str(e))
+            await context.abort(grpc.StatusCode.INTERNAL, str(e))
 
-    def RenderCompletion(
+    async def RenderCompletion(
         self,
         request: tokenizer_pb2.RenderCompletionRequest,
-        context: grpc.ServicerContext,
+        context: grpc.aio.ServicerContext,
     ) -> tokenizer_pb2.RenderCompletionResponse:
         """Render an OpenAI completion request via OpenAIServingRender."""
         try:
-            results = asyncio.run_coroutine_threadsafe(
-                self.renderer_service.render_completion(
-                    request.request_json, request.model_name
-                ),
-                self._loop,
-            ).result()
-            items: list[tokenizer_pb2.RenderChatCompletionResponse] = [
-                self._generate_request_to_proto(r) for r in results
-            ]
-            return tokenizer_pb2.RenderCompletionResponse(items=items, success=True)
+            completion_request = CompletionRequest(
+                model=request.model_name,
+                prompt=request.prompt,
+            )
+            results = await self.renderer_service.render_completion(
+                completion_request, request.model_name
+            )
+            result = results[0]
+            return tokenizer_pb2.RenderCompletionResponse(
+                request_id=result.request_id,
+                token_ids=list(result.token_ids),
+                success=True,
+            )
         except Exception as e:
             logging.error(f"RenderCompletion failed: {e}", exc_info=True)
-            context.abort(grpc.StatusCode.INTERNAL, str(e))
+            await context.abort(grpc.StatusCode.INTERNAL, str(e))
 
 
 def create_grpc_server(
     tokenizer_service: TokenizerService,
     uds_socket_path: str,
-    thread_pool: ThreadPoolExecutor,
     renderer_service: RendererService,
     tcp_port: str = "",
-) -> grpc.Server:
-    """Create a synchronous gRPC server.
+) -> grpc.aio.Server:
+    """Create an async gRPC server.
 
     Args:
         tokenizer_service: The tokenizer service implementation
         uds_socket_path: Path to Unix Domain Socket
-        thread_pool: ThreadPoolExecutor for handling requests
         renderer_service: The renderer service wrapping OpenAIServingRender
         tcp_port: TCP port for testing only (leave empty for production)
     """
-    # Create synchronous gRPC server with optimized configuration for multi-threaded processing
-    server = grpc.server(
-        thread_pool,
+    server = grpc.aio.server(
         options=[
             ("grpc.max_send_message_length", 100 * 1024 * 1024),  # 100MB
             ("grpc.max_receive_message_length", 100 * 1024 * 1024),  # 100MB
@@ -246,14 +268,8 @@ def create_grpc_server(
             ),  # 10s - tolerate frequent pings from Envoy/Istio sidecars
             ("grpc.http2.min_ping_interval_without_data_ms", 10000),
             ("grpc.http2.max_frame_size", 8192),
-            (
-                "grpc.max_concurrent_streams",
-                get_thread_pool_size() * 2,
-            ),  # Adjust concurrent streams based on CPU cores
-        ],
+        ]
     )
-
-    # Create service implementation
     servicer = TokenizationServiceServicer(tokenizer_service, renderer_service)
 
     # Register service
@@ -276,13 +292,11 @@ def create_grpc_server(
 
     # Bind to UDS (production)
     server.add_insecure_port(f"unix://{uds_socket_path}")
-    logging.info(f"Synchronous gRPC server configured to listen on {uds_socket_path}")
+    logging.info(f"gRPC server configured to listen on {uds_socket_path}")
 
     # Optionally bind to TCP port (FOR TESTING ONLY)
     if tcp_port:
         server.add_insecure_port(f"0.0.0.0:{tcp_port}")
-        logging.warning(
-            f"TCP mode enabled on port {tcp_port} - FOR TESTING ONLY, DO NOT USE IN PRODUCTION"
-        )
+        logging.warning(f"TCP mode enabled on port {tcp_port} - FOR TESTING ONLY")
 
     return server
