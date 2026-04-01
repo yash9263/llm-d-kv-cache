@@ -250,6 +250,8 @@ func testClear(t *testing.T, ctx context.Context, index Index) {
 			{PodIdentifier: "pod2", DeviceTier: "gpu"},
 			{PodIdentifier: "pod3", DeviceTier: "cpu"},
 		})
+		_, err = index.GetRequestKey(ctx, engineKey)
+		require.NoError(t, err)
 	})
 
 	t.Run("ClearWithDeviceTierFilter", func(t *testing.T) {
@@ -276,6 +278,10 @@ func testClear(t *testing.T, ctx context.Context, index Index) {
 		assert.NotElementsMatch(t, podsPerKey[engineKey2], []PodEntry{
 			{PodIdentifier: "pod4", DeviceTier: "gpu"},
 		})
+
+		// engine key should survive
+		_, err = index.GetRequestKey(ctx, engineKey2)
+		require.NoError(t, err)
 	})
 
 	t.Run("ClearLastPodRemovesKey", func(t *testing.T) {
@@ -295,6 +301,10 @@ func testClear(t *testing.T, ctx context.Context, index Index) {
 		podsPerKey, err := index.Lookup(ctx, []BlockHash{requestKey3}, sets.Set[string]{})
 		require.NoError(t, err)
 		assert.Len(t, podsPerKey, 0, "request key should be removed when no pods remain")
+
+		// engine key should survive
+		_, err = index.GetRequestKey(ctx, engineKey3)
+		require.Error(t, err)
 	})
 
 	t.Run("ClearNoDeviceTier", func(t *testing.T) {
@@ -315,6 +325,10 @@ func testClear(t *testing.T, ctx context.Context, index Index) {
 		podsPerKey, err := index.Lookup(ctx, []BlockHash{requestKey4}, sets.Set[string]{})
 		require.NoError(t, err)
 		assert.Len(t, podsPerKey, 0, "request key should be removed when no pods remain")
+
+		// Clear the dangling engine key
+		_, err = index.GetRequestKey(ctx, engineKey4)
+		require.Error(t, err)
 	})
 
 	t.Run("ClearWithNilEngineKeys", func(t *testing.T) {
@@ -352,6 +366,9 @@ func testClear(t *testing.T, ctx context.Context, index Index) {
 		podsPerKey, err = index.Lookup(ctx, []BlockHash{requestKey5}, sets.Set[string]{})
 		require.NoError(t, err)
 		assert.Len(t, podsPerKey, 0, "request key should be removed when no pods remain")
+
+		_, err = index.GetRequestKey(ctx, EmptyBlockHash)
+		require.Error(t, err)
 	})
 }
 

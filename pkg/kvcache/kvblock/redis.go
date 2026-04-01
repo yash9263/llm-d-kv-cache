@@ -344,7 +344,7 @@ func podIdentifierKey(podIdentifier string) string {
 // KEYS[1] = request-key hash  (e.g. "10633516")
 // KEYS[2] = engine-key string (e.g. "engine:55269488")  — may be "" to skip
 // KEYS[3] = pod reverse-index hash (e.g. "pod:10.0.0.1:8080")
-// ARGV[1] = pod entry field  (e.g. "10.0.0.1:8080@gpu")
+// ARGV[1] = pod entry field  (e.g. "10.0.0.1:8080@gpu").
 var clearPodEntryScript = redis.NewScript(`
 	redis.call('HDEL', KEYS[1], ARGV[1])
 	redis.call('HDEL', KEYS[3], ARGV[1])
@@ -423,6 +423,9 @@ func (r *RedisIndex) Clear(ctx context.Context, podEntry PodEntry) error {
 
 // mustParseUint64 parses a uint64 string, returning 0 on failure.
 func mustParseUint64(s string) uint64 {
-	v, _ := strconv.ParseUint(s, 10, 64)
+	v, err := strconv.ParseUint(s, 10, 64)
+	if err != nil {
+		return 0
+	}
 	return v
 }

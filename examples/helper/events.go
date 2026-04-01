@@ -117,8 +117,10 @@ func SimulateClearAllBlocksEvent(ctx context.Context, publisher *Publisher) erro
 		"AllBlocksCleared",
 	}
 
-	clearAllBlocksPayload, _ := msgpack.Marshal(clearAllBlocksEvent)
-
+	clearAllBlocksPayload, err := msgpack.Marshal(clearAllBlocksEvent)
+	if err != nil {
+		return fmt.Errorf("failed to marshal AllBlocksCleared event: %w", err)
+	}
 	clearAllBlockEventBatch := []any{
 		float64(time.Now().UnixNano()) / 1e9,
 		[]msgpack.RawMessage{clearAllBlocksPayload},
