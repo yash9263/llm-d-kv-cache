@@ -197,7 +197,7 @@ func demonstrateValkeyOperations(ctx context.Context, indexer *kvcache.Indexer) 
 
 	// Clear the cache
 	logger.Info("Clearing the cache")
-	err = indexer.KVBlockIndex().Clear(ctx)
+	err = indexer.KVBlockIndex().Clear(ctx, podEntries[0])
 	if err != nil {
 		return fmt.Errorf("failed to clear cache: %w", err)
 	}

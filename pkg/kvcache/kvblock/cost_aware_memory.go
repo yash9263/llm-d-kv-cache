@@ -427,6 +427,6 @@ func (m *CostAwareMemoryIndex) Clear(ctx context.Context, podEntry PodEntry) err
 	}
 
 	m.data.Wait()
-	traceLogger.Info("Cleared pod entries from InMemoryIndex", "podEntry", podEntry)
+	traceLogger.Info("Cleared pod entries from CostAwareMemoryIndex", "podEntry", podEntry)
 	return nil
 }

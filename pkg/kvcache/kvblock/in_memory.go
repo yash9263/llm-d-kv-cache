@@ -225,7 +225,7 @@ func (m *InMemoryIndex) Add(ctx context.Context, engineKeys, requestKeys []Block
 					mappings: make(map[BlockHash]BlockHash),
 				}
 				if contained, _ := m.podToRequestKeys.ContainsOrAdd(entry.PodIdentifier, pm); contained {
-					pm, _ = m.podToRequestKeys.Get(entry.PodIdentifier)
+					pm, _ = m.podToRequestKeys.Peek(entry.PodIdentifier)
 				}
 			}
 			pm.mu.Lock()
@@ -286,11 +286,11 @@ func (m *InMemoryIndex) Evict(ctx context.Context, key BlockHash, keyType KeyTyp
 		if pm, ok := m.podToRequestKeys.Peek(entry.PodIdentifier); ok {
 			pm.mu.Lock()
 			delete(pm.mappings, requestKey)
-			pm.mu.Unlock()
 
 			if len(pm.mappings) == 0 {
 				m.podToRequestKeys.Remove(entry.PodIdentifier)
 			}
+			pm.mu.Unlock()
 		}
 	}
 
@@ -354,7 +354,13 @@ func (m *InMemoryIndex) Clear(ctx context.Context, podEntry PodEntry) error {
 		return nil
 	}
 	pm.mu.Lock()
+	snapshot := make(map[BlockHash]BlockHash, len(pm.mappings))
 	for requestKey, engineKey := range pm.mappings {
+		snapshot[requestKey] = engineKey
+	}
+	pm.mu.Unlock()
+
+	for requestKey, engineKey := range snapshot {
 		cache, exists := m.data.Peek(requestKey)
 		if !exists || cache == nil {
 			continue
@@ -403,7 +409,6 @@ func (m *InMemoryIndex) Clear(ctx context.Context, podEntry PodEntry) error {
 		}
 		currentCache.mu.Unlock()
 	}
-	pm.mu.Unlock()
 
 	if podEntry.DeviceTier == "" {
 		m.podToRequestKeys.Remove(podEntry.PodIdentifier)
@@ -415,13 +420,14 @@ func (m *InMemoryIndex) Clear(ctx context.Context, podEntry PodEntry) error {
 				remaining[requestKey] = engineKey
 			}
 		}
-		pm.mu.Unlock()
+
 		if len(remaining) == 0 {
 			m.podToRequestKeys.Remove(podEntry.PodIdentifier)
 		} else {
 			pm := &podMapping{mappings: remaining}
 			m.podToRequestKeys.Add(podEntry.PodIdentifier, pm)
 		}
+		pm.mu.Unlock()
 	}
 
 	traceLogger.Info("Cleared pod entries from InMemoryIndex", "podEntry", podEntry)

@@ -330,6 +330,9 @@ func (r *RedisIndex) GetRequestKey(ctx context.Context, engineKey BlockHash) (Bl
 }
 
 func redisEngineKey(engineKey BlockHash) string {
+	if engineKey == EmptyBlockHash {
+		return ""
+	}
 	return "engine:" + engineKey.String()
 }
 
