@@ -376,6 +376,7 @@ func (m *CostAwareMemoryIndex) Clear(ctx context.Context, podEntry PodEntry) err
 		return nil
 	}
 
+	remaining := make(map[BlockHash]BlockHash)
 	for requestKey, engineKey := range mappings {
 		pod, found := m.data.Get(requestKey.String())
 		if !found {
@@ -407,23 +408,16 @@ func (m *CostAwareMemoryIndex) Clear(ctx context.Context, podEntry PodEntry) err
 			}
 		} else if podCacheLenBefore != pod.Len() {
 			m.data.Set(requestKey.String(), pod, pod.CalculateByteSize(requestKey.String()))
+			remaining[requestKey] = engineKey
+		} else {
+			remaining[requestKey] = engineKey
 		}
 	}
 
-	if podEntry.DeviceTier == "" {
+	if podEntry.DeviceTier == "" || len(remaining) == 0 {
 		m.podToRequestKeys.Remove(podEntry.PodIdentifier)
 	} else {
-		remaining := make(map[BlockHash]BlockHash)
-		for requestKey, engineKey := range mappings {
-			if _, found := m.data.Get(requestKey.String()); found {
-				remaining[requestKey] = engineKey
-			}
-		}
-		if len(remaining) == 0 {
-			m.podToRequestKeys.Remove(podEntry.PodIdentifier)
-		} else {
-			m.podToRequestKeys.Add(podEntry.PodIdentifier, remaining)
-		}
+		m.podToRequestKeys.Add(podEntry.PodIdentifier, remaining)
 	}
 
 	m.data.Wait()

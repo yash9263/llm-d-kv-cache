@@ -111,6 +111,11 @@ func NewRedisIndex(config *RedisIndexConfig) (Index, error) {
 		return nil, fmt.Errorf("failed to connect to %s: %w", config.BackendType, err)
 	}
 
+	// Pre-load Lua scripts so EvalSha calls in pipelines never get NOSCRIPT errors.
+	if err := clearPodEntryScript.Load(context.Background(), redisClient).Err(); err != nil {
+		return nil, fmt.Errorf("failed to load Lua scripts on %s: %w", config.BackendType, err)
+	}
+
 	return &RedisIndex{
 		RedisClient: redisClient,
 		BackendType: config.BackendType,
@@ -382,6 +387,7 @@ func (r *RedisIndex) Clear(ctx context.Context, podEntry PodEntry) error {
 		return nil
 	}
 
+	pipe := r.RedisClient.Pipeline()
 	for entryStr, meta := range fields {
 		// Filter by DeviceTier when specified.
 		// entryStr format: "<podIdentifier>@<tier>[speculative]"
@@ -411,13 +417,11 @@ func (r *RedisIndex) Clear(ctx context.Context, podEntry PodEntry) error {
 			}
 		}
 
-		if err := clearPodEntryScript.Run(
-			ctx, r.RedisClient,
-			[]string{requestKeyStr, engineKeyRedisKey, podKey},
-			entryStr,
-		).Err(); err != nil && !errors.Is(err, redis.Nil) {
-			return fmt.Errorf("failed to clear pod entry %s from hash %s: %w", entryStr, requestKeyStr, err)
-		}
+		pipe.EvalSha(ctx, clearPodEntryScript.Hash(), []string{requestKeyStr, engineKeyRedisKey, podKey}, entryStr)
+	}
+
+	if _, err := pipe.Exec(ctx); err != nil {
+		return fmt.Errorf("failed to clear pod entries from Redis index: %w", err)
 	}
 
 	logger.Info("Cleared pod entries from Redis index", "podEntry", podEntry)

@@ -424,8 +424,7 @@ func (m *InMemoryIndex) Clear(ctx context.Context, podEntry PodEntry) error {
 		if len(remaining) == 0 {
 			m.podToRequestKeys.Remove(podEntry.PodIdentifier)
 		} else {
-			pm := &podMapping{mappings: remaining}
-			m.podToRequestKeys.Add(podEntry.PodIdentifier, pm)
+			pm.mappings = remaining
 		}
 		pm.mu.Unlock()
 	}
