@@ -401,15 +401,16 @@ func (m *CostAwareMemoryIndex) Clear(ctx context.Context, podEntry PodEntry) err
 			pod.Delete(entry)
 		}
 
-		if pod.Len() == 0 {
+		switch {
+		case pod.Len() == 0:
 			m.data.Del(requestKey.String())
-			if _, hasEngineKey := m.requestKeys.Get(engineKey); hasEngineKey {
+			if engineKey != EmptyBlockHash {
 				m.requestKeys.Remove(engineKey)
 			}
-		} else if podCacheLenBefore != pod.Len() {
+		case podCacheLenBefore != pod.Len():
 			m.data.Set(requestKey.String(), pod, pod.CalculateByteSize(requestKey.String()))
 			remaining[requestKey] = engineKey
-		} else {
+		default:
 			remaining[requestKey] = engineKey
 		}
 	}
